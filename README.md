@@ -223,3 +223,9 @@ The pipeline automatically:
 | LLM generates wrong Cypher   | Enable `verbose=True` in `rag_chain.py` to see generated query |
 | Empty results for a question | Graph may not have matching FAQs; check your CSV data          |
 | `GROQ_API_KEY invalid`       | Verify key from https://console.groq.com is correct            |
+
+---
+
+## License
+
+This project is licensed under the MIT License – see the [LICENSE](LICENSE) file for details.
