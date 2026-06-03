@@ -35,6 +35,8 @@ def build_graph() -> Neo4jGraph:
         url=config.NEO4J_URI,
         username=config.NEO4J_USERNAME,
         password=config.NEO4J_PASSWORD,
+        database=config.NEO4J_DATABASE,
+       
     )
 
 # ── 2. Load CSV ──────────────────────────────────────────────────────────

@@ -43,6 +43,7 @@ def connect_to_graph() -> Neo4jGraph:
         url=config.NEO4J_URI,
         username=config.NEO4J_USERNAME,
         password=config.NEO4J_PASSWORD,
+        database=config.NEO4J_DATABASE,
     )
 def run_interactive_loop(chain) -> None:
     """Start an interactive Q&A session in the terminal."""
@@ -56,7 +57,7 @@ def run_interactive_loop(chain) -> None:
     print()
  
     # Open output file for writing results
-    with open(OUTPUT_FILE, "w") as f:
+    with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
         f.write("Graph RAG – Chat Results\n")
         f.write("=" * 60 + "\n\n")
     
@@ -86,7 +87,7 @@ def run_interactive_loop(chain) -> None:
             print(f"\nAssistant: {answer}")
  
             # Write to file
-            with open(OUTPUT_FILE, "a") as f:
+            with open(OUTPUT_FILE, "a", encoding="utf-8") as f:
                 f.write(f"User: {user_input}\n")
                 f.write(f"Assistant: {answer}\n")
                 
@@ -107,10 +108,14 @@ def run_interactive_loop(chain) -> None:
             print()
  
         except Exception as e:
-            print(f"\n[ERROR] {e}\n")
+            import traceback
+            print(f"\n[ERROR] {type(e).__name__}: {e}")
+            traceback.print_exc()
+            print()
             # Log error to file as well
             with open(OUTPUT_FILE, "a") as f:
-                f.write(f"[ERROR] {e}\n\n")
+                f.write(f"[ERROR] {type(e).__name__}: {e}\n")
+                f.write(traceback.format_exc() + "\n\n")
  
  
 def main() -> None:
