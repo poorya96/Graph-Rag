@@ -3,19 +3,13 @@ graph_builder.py
 ────────────────
 Step 2 of the pipeline.
  
-Reads the CSV file and converts every row into a set of
-Neo4j Nodes and Relationships, then saves them to the database.
+Reads the CSV file and converts every FAQ row into Neo4j nodes.
  
 Graph schema we create:
-  (:Employee)   – one node per person
-  (:Department) – one node per unique department
-  (:Project)    – one node per unique project
-  (:Skill)      – one node per unique skill (CSV uses ";" separator)
- 
-  (:Employee)-[:WORKS_IN]->(:Department)
-  (:Employee)-[:REPORTS_TO]->(:Employee)       (if manager exists)
-  (:Employee)-[:HAS_SKILL]->(:Skill)
-  (:Employee)-[:WORKS_ON]->(:Project)
+  (:FAQ) – one node per FAQ entry with question, answer, and category
+  (:Category) – one node per unique category
+  
+  (:FAQ)-[:BELONGS_TO]->(:Category)
 """
  
 import pandas as pd
@@ -32,7 +26,7 @@ def _make_id(value: str) -> str:
     """Create a safe, lowercase node ID from any string."""
     return value.strip().lower().replace(" ", "-")
 
-def build_graph() -> None:
+def build_graph() -> Neo4jGraph:
     """Read CSV → build graph documents → save to Neo4j."""
 
 # ── 1. Connect to Neo4j ──────────────────────────────────────────────────
@@ -49,100 +43,64 @@ def build_graph() -> None:
     print(f"[graph_builder] {len(df)} rows loaded.\n")
  
 # ── 3. Build nodes & relationships ───────────────────────────────────────
-    all_graph_documents:list[GraphDocument]=[]
+    all_graph_documents: list[GraphDocument] = []
+    seen_categories: set[str] = set()
 
-    for _, row in df.iterrows():
-        nodes: list[Node]=[]
-        relationships: list[Relationship]=[]
+    for idx, row in df.iterrows():
+        nodes: list[Node] = []
+        relationships: list[Relationship] = []
 
-     # ── Employee node ────────────────────────────────────────────────────
-        emp_node = Node(
-            type="Employee",
-            id=_make_id(row["name"]),
+        # ── FAQ node ─────────────────────────────────────────────────────
+        question = row["question"]
+        answer = row["answer"]
+        category = row["category"]
+        
+        faq_node = Node(
+            type="FAQ",
+            id=_make_id(f"faq-{idx}"),
             properties={
-                "name": row["name"],
-                "role": row["role"],
-                "employee_id": row["employee_id"],
+                "question": question,
+                "answer": answer,
+                "category": category,
             },
         )
-        nodes.append(emp_node)
+        nodes.append(faq_node)
 
-        # ── Department node + WORKS_IN relationship ──────────────────────────
-        dept_node = Node(
-            type="Department",
-            id=_make_id(row["department"]),
-            properties={"name": row["department"]},
-        )
-        nodes.append(dept_node)
-        relationships.append(
-            Relationship(source=emp_node, target=dept_node, type="WORKS_IN")
-        )
-        # ── Project node + WORKS_ON relationship ─────────────────────────────
-        if pd.notna(row.get("project")):
-            proj_node = Node(
-                type="Project",
-                id=_make_id(row["project"]),
-                properties={"name": row["project"]},
+        # ── Category node + BELONGS_TO relationship ──────────────────────────
+        if category not in seen_categories:
+            cat_node = Node(
+                type="Category",
+                id=_make_id(category),
+                properties={"name": category},
             )
-            nodes.append(proj_node)
+            nodes.append(cat_node)
+            seen_categories.add(category)
             relationships.append(
-                Relationship(source=emp_node, target=proj_node, type="WORKS_ON")
+                Relationship(source=faq_node, target=cat_node, type="BELONGS_TO")
             )
-            # ── Skill nodes + HAS_SKILL relationships ────────────────────────────
-        if pd.notna(row.get("skills")):
-            for skill_name in row["skills"].split(";"):
-                skill_name = skill_name.strip()
-                skill_node = Node(
-                    type="Skill",
-                    id=_make_id(skill_name),
-                    properties={"name": skill_name},
-                )
-                nodes.append(skill_node)
-                relationships.append(
-                    Relationship(
-                        source=emp_node, target=skill_node, type="HAS_SKILL"
-                    )
-                )
- 
-        # ── REPORTS_TO relationship (resolved in second pass below) ──────────
-        # Store manager name in properties for now; resolved after loop.
-
-        if pd.notna(row.get("manager")):
-            emp_node.properties["_manager_name"] = row["manager"]
+        else:
+            # Category already exists, reference it
+            cat_node = Node(
+                type="Category",
+                id=_make_id(category),
+                properties={"name": category},
+            )
+            relationships.append(
+                Relationship(source=faq_node, target=cat_node, type="BELONGS_TO")
+            )
 
         all_graph_documents.append(
-            GraphDocument(node=nodes, relationships=relationships, source=None)
+            GraphDocument(nodes=nodes, relationships=relationships, source=None)
         )
 
-    # ── 4. Second pass: add REPORTS_TO edges ─────────────────────────────────
-    # Build a quick name→Node lookup
-
-    emp_lookup:dict[str, Node]={}
-    for gd in all_graph_documents:
-        for node in gd.nodes:
-            if node.type == "Employee":
-               emp_lookup[node.properties["name"]]=node
-    
-    for gd in all_graph_documents:
-        for node in gd.nodes:
-            if node.type == "Employee" and "_manager_name" in node.properties:
-                manager_name = node.properties.pop("_manager_name")
-                if manager_name in emp_lookup:
-                    gd.relationships.append(
-                        Relationship(
-                            source=node,
-                            target=emp_lookup[manager_name],
-                            type="REPORTS_TO",
-                        )
-                    )
-# ── 5. Save everything to Neo4j ──────────────────────────────────────────
+# ── 4. Save everything to Neo4j ──────────────────────────────────────────
     print("[graph_builder] Saving graph documents to Neo4j …")
     graph.add_graph_documents(
         all_graph_documents,
-        baseEntityLabel=True,   # adds __Entity__ label for easy querying
+        baseEntityLabel=True,
         include_source=False,
     )
-    print("[graph_builder] ✅ Graph built successfully!\n")
+    print("[graph_builder] Graph built successfully!\n")
     return graph
  
  
